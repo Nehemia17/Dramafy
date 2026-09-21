@@ -1,0 +1,255 @@
+================================================================================
+PROJECT REQUIREMENT DOCUMENT (PRD) & SPESIFIKASI TEKNIS
+PLATFORM STREAMING DRAMA & FILM ASIA (EMBED-BASED ARCHITECTURE)
+================================================================================
+Versi        : 1.0.0
+Status       : Architecture Approved
+Target Stack : Next.js Fullstack (App Router) + Prisma ORM + PostgreSQL
+Target UI    : Modern Minimalist Dark UI + Immersive Hero Banner
+
+--------------------------------------------------------------------------------
+1. RINGKASAN EKSEKUTIF
+--------------------------------------------------------------------------------
+Membangun platform portal video streaming drama Asia (K-Drama, C-Drama, J-Drama,
+dll.) berkinerja tinggi yang mengadopsi antarmuka modern, cepat, dan teroptimasi
+SEO. Sistem menggunakan pemutar video berbasis tautan sematan (embed iframe)
+multi-server. Dengan pendekatan ini, seluruh beban transfer data streaming video
+ditanggung oleh penyedia pihak ketiga, sehingga biaya operasional dan bandwidth
+server utama mendekati nol.
+
+--------------------------------------------------------------------------------
+2. SASARAN PRODUK & TARGET PENGGUNA
+--------------------------------------------------------------------------------
+A. Penonton (End-User):
+   - Menjelajahi katalog dengan filter cepat (status ongoing/completed, negara,
+     genre, tahun rilis).
+   - Menonton episode dengan transisi pemutar mulus dan tata letak responsif
+     (mobile & desktop).
+   - Beralih ke server alternatif secara instan jika link utama mati atau lambat.
+   - Mengakses episode berikutnya/sebelumnya langsung dari antarmuka pemutar.
+
+B. Pengelola Konten (Admin / CMS):
+   - Mengelola master data drama (judul, sinopsis, poster, backdrop, status).
+   - Menambahkan episode dan mengaitkan multi-server link embed video.
+   - Mengatur judul yang ditampilkan di Hero Banner beranda (isFeatured flag).
+
+--------------------------------------------------------------------------------
+3. SPESIFIKASI MODUL & FITUR UTAMA
+--------------------------------------------------------------------------------
+1. Immersive Hero Section:
+   - Tampilan poster lanskap resolusi tinggi dengan dual gradient overlay
+     (fade vertikal ke background dan horizontal untuk keterbacaan teks).
+   - Badge rating, genre, batasan usia, dan tombol aksi cepat ("Play / Detail").
+
+2. Discovery, Katalog & Filter:
+   - Realtime search bar pencarian judul drama.
+   - Quick Filter Pills (Ongoing, Completed, K-Drama, C-Drama).
+   - Filter halaman katalog multi-parameter berbasis URL query string
+     (/browse?genre=romance&status=ongoing).
+   - Slider / grid poster rasio standar 2:3 dengan efek hover mikro.
+
+3. Watch Page & Video Player Engine:
+   - Container pemutar responsif aspect-ratio 16:9 dengan isolasi iframe sandbox.
+   - Tab Server Switcher (Server VIP, Server Stream 1, Server Stream 2, dsb).
+   - Panel daftar episode vertikal / horizontal drawer.
+   - Navigasi Next Episode dan Previous Episode terintegrasi.
+
+4. Panel Admin / CMS:
+   - Manajemen CRUD Drama, Genre, Episode, dan EpisodeServer.
+   - Proteksi sesi admin via cookie terenkripsi dan Server Actions.
+   - Validasi payload masukan menggunakan Zod schema.
+
+--------------------------------------------------------------------------------
+4. ARSITEKTUR ENTITY RELATIONSHIP DIAGRAM (ERD)
+--------------------------------------------------------------------------------
+
+[genres]
+  +-- id (PK, CUID)
+  +-- name (String, Unique)
+  +-- slug (String, Unique)
+        |
+        +---< [drama_genres] (Many-to-Many Pivot) >---+
+                                                      |
+[dramas] <--------------------------------------------+
+  +-- id (PK, CUID)
+  +-- title (String)
+  +-- slug (String, Unique, Indexed)
+  +-- alternative_title (String, Nullable)
+  +-- synopsis (Text)
+  +-- poster_url (String)
+  +-- backdrop_url (String, Nullable)
+  +-- type (Enum: DRAMA, MOVIE)
+  +-- status (Enum: ONGOING, COMPLETED, UPCOMING)
+  +-- country (String, e.g. "South Korea", "China")
+  +-- release_year (Int)
+  +-- rating (Decimal, e.g. 8.5)
+  +-- total_episodes (Int, Nullable)
+  +-- views (Int, Default: 0)
+  +-- is_featured (Boolean, Default: false)
+  +-- created_at / updated_at
+        |
+        +-- (1:N, Cascade Delete)
+        v
+[episodes]
+  +-- id (PK, CUID)
+  +-- drama_id (FK -> dramas.id)
+  +-- episode_number (Int)
+  +-- title (String, Nullable)
+  +-- release_date (DateTime, Nullable)
+  +-- [Unique Constraint: drama_id + episode_number]
+        |
+        +-- (1:N, Cascade Delete)
+        v
+[episode_servers]
+  +-- id (PK, CUID)
+  +-- episode_id (FK -> episodes.id)
+  +-- server_name (String, e.g. "Server VIP", "StreamSB")
+  +-- embed_url (Text, URL embed iframe)
+  +-- quality (String, Default: "HD")
+  +-- order_priority (Int, Default: 1)
+
+--------------------------------------------------------------------------------
+5. SKEMA DATABASE PRISMA (prisma/schema.prisma)
+--------------------------------------------------------------------------------
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ContentType {
+  DRAMA
+  MOVIE
+}
+
+enum DramaStatus {
+  ONGOING
+  COMPLETED
+  UPCOMING
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Drama {
+  id               String       @id @default(cuid())
+  title            String
+  slug             String       @unique
+  alternativeTitle String?      @map("alternative_title")
+  synopsis         String       @db.Text
+  posterUrl        String       @map("poster_url")
+  backdropUrl      String?      @map("backdrop_url")
+  type             ContentType  @default(DRAMA)
+  status           DramaStatus  @default(ONGOING)
+  country          String
+  releaseYear      Int          @map("release_year")
+  rating           Decimal?     @default(0.0) @db.Decimal(3, 1)
+  totalEpisodes    Int?         @map("total_episodes")
+  views            Int          @default(0)
+  isFeatured       Boolean      @default(false) @map("is_featured")
+
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  genres           Genre[]      @relation("DramaToGenre")
+  episodes         Episode[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([type])
+  @@index([releaseYear])
+  @@map("dramas")
+}
+
+model Genre {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  dramas    Drama[]  @relation("DramaToGenre")
+
+  @@index([slug])
+  @@map("genres")
+}
+
+model Episode {
+  id            String          @id @default(cuid())
+  dramaId       String          @map("drama_id")
+  episodeNumber Int             @map("episode_number")
+  title         String?
+  releaseDate   DateTime?       @map("release_date")
+  
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  drama         Drama           @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  servers       EpisodeServer[]
+
+  @@unique([dramaId, episodeNumber])
+  @@index([dramaId])
+  @@map("episodes")
+}
+
+model EpisodeServer {
+  id            String   @id @default(cuid())
+  episodeId     String   @map("episode_id")
+  serverName    String   @map("server_name")
+  embedUrl      String   @map("embed_url") @db.Text
+  quality       String?  @default("HD")
+  orderPriority Int      @default(1) @map("order_priority")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  episode       Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId])
+  @@map("episode_servers")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+--------------------------------------------------------------------------------
+6. REKOMENDASI BRAND & NAMA DOMAIN
+--------------------------------------------------------------------------------
+1. Dramafy (dramafy.id / dramafy.tv)
+   - Karakter: Modern, sleek, setara platform streaming global masa kini.
+   - Target: Audiens muda pencari tampilan bersih dan cepat.
+
+2. KineDrama (kinedrama.com / kinedrama.net)
+   - Karakter: Perpaduan "Cinema" dan "Drama", memberi kesan koleksi film/drama
+     yang sinematik dan tertata rapi.
+
+3. NontonKuy (nontonkuy.stream / nontonkuy.vip)
+   - Karakter: Sangat familiar di lidah pasar Indonesia, kasual, dan mudah viral
+     secara organik.
+
+--------------------------------------------------------------------------------
+7. RENCANA IMPLEMENTASI (SPRINT ROADMAP)
+--------------------------------------------------------------------------------
+- Sprint 1: Setup project Next.js, inisialisasi Prisma, koneksi PostgreSQL,
+            dan pembuatan seed script (dummy drama, episode, & server link).
+- Sprint 2: Implementasi layout utama (Dark UI base), Immersive Hero Section,
+            dan komponen katalog carousel / slider.
+- Sprint 3: Pembuatan halaman Watch Player, wrapper 16:9 iframe, tab server
+            switcher, dan navigasi episode list.
+- Sprint 4: Pembuatan Admin CMS CRUD, proteksi halaman admin, optimasi metadata
+            SEO (OpenGraph, Title tags), QA bug testing, dan deployment.
+================================================================================
