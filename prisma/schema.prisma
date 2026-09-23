@@ -1,108 +1,84 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
-//
-// NOTE: Schema ini dikonfigurasi untuk SQLite (development lokal).
-// Untuk production (Supabase/PostgreSQL), ganti provider ke "postgresql"
-// dan tambahkan kembali @db.Text, @db.Decimal, serta enum types.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
-// SQLite tidak support native enum — pakai String dengan validasi di app layer
 // ContentType: "DRAMA" | "MOVIE"
 // DramaStatus: "ONGOING" | "COMPLETED" | "UPCOMING"
-// Role: "USER" | "ADMIN"
-
-model Drama {
-  id               String   @id @default(cuid())
-  title            String
-  slug             String   @unique
-  alternativeTitle String?  @map("alternative_title")
-  synopsis         String
-  posterUrl        String   @map("poster_url")
-  backdropUrl      String?  @map("backdrop_url")
-  type             String   @default("DRAMA")
-  status           String   @default("ONGOING")
-  country          String
-  releaseYear      Int      @map("release_year")
-  rating           Float?   @default(0.0)
-  totalEpisodes    Int?     @map("total_episodes")
-  views            Int      @default(0)
-  isFeatured       Boolean  @default(false) @map("is_featured")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  genres   Genre[]   @relation("DramaToGenre")
-  episodes Episode[]
-
-  @@index([slug])
-  @@index([status])
-  @@index([type])
-  @@index([releaseYear])
-  @@map("dramas")
-}
-
-model Genre {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  slug      String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-
-  dramas Drama[] @relation("DramaToGenre")
-
-  @@index([slug])
-  @@map("genres")
-}
-
-model Episode {
-  id            String    @id @default(cuid())
-  dramaId       String    @map("drama_id")
-  episodeNumber Int       @map("episode_number")
-  title         String?
-  releaseDate   DateTime? @map("release_date")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  drama   Drama           @relation(fields: [dramaId], references: [id], onDelete: Cascade)
-  servers EpisodeServer[]
-
-  @@unique([dramaId, episodeNumber])
-  @@index([dramaId])
-  @@map("episodes")
-}
-
-model EpisodeServer {
-  id            String @id @default(cuid())
-  episodeId     String @map("episode_id")
-  serverName    String @map("server_name")
-  embedUrl      String @map("embed_url")
-  quality       String @default("HD")
-  orderPriority Int    @default(1) @map("order_priority")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-
-  @@index([episodeId])
-  @@map("episode_servers")
-}
+// UserRole: "ADMIN" | "USER"
 
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  password  String
   name      String?
-  role      String   @default("USER")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  password  String
+  role      String   @default("ADMIN") // UserRole: "ADMIN" | "USER"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
-  @@map("users")
+model Genre {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  slug   String  @unique
+  dramas Drama[]
+}
+
+model Drama {
+  id               String    @id @default(cuid())
+  title            String
+  slug             String    @unique
+  alternativeTitle String?
+  synopsis         String
+  posterUrl        String
+  backdropUrl      String?
+  type             String    @default("DRAMA") // ContentType: "DRAMA" | "MOVIE"
+  status           String    @default("ONGOING") // DramaStatus: "ONGOING" | "COMPLETED" | "UPCOMING"
+  country          String    @default("South Korea")
+  releaseYear      Int
+  totalEpisodes    Int?
+  rating           Float?
+  views            Int       @default(0)
+  isFeatured       Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  genres           Genre[]
+  episodes         Episode[]
+
+  @@index([slug])
+  @@index([type])
+  @@index([status])
+  @@index([country])
+}
+
+model Episode {
+  id            String   @id @default(cuid())
+  episodeNumber Int
+  title         String?
+  releaseDate   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  dramaId       String
+  drama         Drama    @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  servers       Server[]
+
+  @@unique([dramaId, episodeNumber])
+}
+
+model Server {
+  id            String   @id @default(cuid())
+  serverName    String
+  embedUrl      String
+  quality       String   @default("HD") // "FHD" | "HD" | "SD"
+  orderPriority Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  episodeId     String
+  episode       Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
 }
